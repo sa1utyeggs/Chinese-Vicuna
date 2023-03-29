@@ -10,13 +10,13 @@ appdirs
 llama-index
 
 
-pip~=22.0.3
-wheel~=0.37.0
-cryptography~=3.4.8
-setuptools~=58.3.0
-future~=0.18.2
-torch~=1.7.1
-tenacity~=8.2.2
-PyYAML~=6.0
-numpy~=1.21.3
-langchain~=0.0.116
+pip
+wheel
+cryptography
+setuptools
+future
+torch
+tenacity
+PyYAML
+numpy
+langchain
