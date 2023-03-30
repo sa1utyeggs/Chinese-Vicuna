@@ -437,7 +437,7 @@ logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 test_gen_config = GenerationConfig(
     temperature=0.2,
     top_p=0.85,
-    top_k=30,
+    top_k=5,
     num_beams=4,
     bos_token_id=1,
     eos_token_id=2,
@@ -478,10 +478,9 @@ class CustomLLM(LLM):
         output = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         print('output: \n' + output)
         # slice the prompt
-        print('# slice the prompt')
+        print('# slice the output, only newly generated token stay')
         response = output[prompt_length:]
 
-        # only return newly generated tokens
         return response
 
     @property
@@ -526,7 +525,7 @@ def evaluate(
     # set maximum input size
     max_input_size = 2048
     # set number of output tokens
-    num_output = 512
+    num_output = 1024
     # set maximum chunk overlap
     max_chunk_overlap = 20
 
@@ -549,28 +548,30 @@ def evaluate(
     print('end query')
     # print(response)
 
-    with torch.no_grad():
-        # immOutPut = model.generate(input_ids=input_ids, generation_config=generation_config,
-        #                            return_dict_in_generate=True, output_scores=False,
-        #                            repetition_penalty=float(repetition_penalty), )
-        # outputs = tokenizer.batch_decode(immOutPut)
-        last_show_text = ''
-        for generation_output in model.stream_generate(
-                input_ids=input_ids,
-                generation_config=generation_config,
-                return_dict_in_generate=True,
-                output_scores=False,
-                repetition_penalty=float(repetition_penalty),
-        ):
-            outputs = tokenizer.batch_decode(generation_output)
-            show_text = "\n--------------------------------------------\n".join(
-                [output.split("### Response:")[1].strip().replace('�', '') for output in outputs]
-            )
-            # if show_text== '':
-            #     yield last_show_text
-            # else:
-            yield show_text
-            last_show_text = outputs[0].split("### Response:")[1].strip().replace('�', '')
+    output = response
+
+    # with torch.no_grad():
+    #     # immOutPut = model.generate(input_ids=input_ids, generation_config=generation_config,
+    #     #                            return_dict_in_generate=True, output_scores=False,
+    #     #                            repetition_penalty=float(repetition_penalty), )
+    #     # outputs = tokenizer.batch_decode(immOutPut)
+    #     last_show_text = ''
+    #     for generation_output in model.stream_generate(
+    #             input_ids=input_ids,
+    #             generation_config=generation_config,
+    #             return_dict_in_generate=True,
+    #             output_scores=False,
+    #             repetition_penalty=float(repetition_penalty),
+    #     ):
+    #         outputs = tokenizer.batch_decode(generation_output)
+    #         show_text = "\n--------------------------------------------\n".join(
+    #             [output.split("### Response:")[1].strip().replace('�', '') for output in outputs]
+    #         )
+    #         # if show_text== '':
+    #         #     yield last_show_text
+    #         # else:
+    #         yield show_text
+    #         last_show_text = outputs[0].split("### Response:")[1].strip().replace('�', '')
 
 
 gr.Interface(
