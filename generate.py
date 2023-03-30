@@ -456,38 +456,32 @@ class CustomLLM(LLM):
     #                     device=device)
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+        print('# start _call')
         prompt_length = len(prompt)
         # response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
         # print(response[prompt_length:])
 
-        # # BELlE torch 运行
-        # ckpt = ''
-        # # set device (cuda or cpu)
-        # device = torch.device('cuda')
-        # # load model
-        # model = LlamaForCausalLM.from_pretrained(ckpt, device_map='auto', low_cpu_mem_usage=True)
-        # # load tokenizer
-        # tokenizer = AutoTokenizer.from_pretrained(ckpt)
-
-        # prompt = "Human: 写一首中文歌曲，赞美大自然 \n\nAssistant: "
-
-        # break the prompt to tokens
+        print('# break the prompt to tokens')
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
 
         # produce output tokens
         # generate_ids = model.generate(input_ids, max_new_tokens=2500, do_sample=True, top_k=30, top_p=0.85,
         #                               temperature=0.5, repetition_penalty=1., eos_token_id=2, bos_token_id=1,
         #                               pad_token_id=0)
+        print('# generate')
         generate_ids = model.generate(input_ids=input_ids,
                                       generation_config=test_gen_config)
 
         # decode token to string response
+        print('# decode token to string response')
         output = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        # slice off the prompt
-        response = output[len(prompt):]
+        print('output: \n' + output)
+        # slice the prompt
+        print('# slice the prompt')
+        response = output[prompt_length:]
 
         # only return newly generated tokens
-        return response[prompt_length:]
+        return response
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
@@ -550,7 +544,7 @@ def evaluate(
     print('end save to disk')
     # Query and print response
     print('start query')
-    response = index.query('what is License of Clash?', mode="embedding")
+    response = index.query('what is License of Clash?')
     print('end query')
     print(response)
 

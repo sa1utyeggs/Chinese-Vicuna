@@ -1,7 +1,7 @@
 datasets
 loralib
 sentencepiece~=0.1.96
-git+https://github.com/huggingface/transformers.git
+transformers==4.28.0.dev0
 accelerate~=0.17.1
 bitsandbytes~=0.37.1
 git+https://github.com/huggingface/peft.git
