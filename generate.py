@@ -457,6 +457,7 @@ class CustomLLM(LLM):
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         print('# start _call')
+        print('prompt: \n', prompt)
         prompt_length = len(prompt)
         # response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
         # print(response[prompt_length:])
@@ -546,7 +547,7 @@ def evaluate(
     print('start query')
     response = index.query('what is License of Clash?')
     print('end query')
-    print(response)
+    # print(response)
 
     with torch.no_grad():
         # immOutPut = model.generate(input_ids=input_ids, generation_config=generation_config,
