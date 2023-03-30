@@ -429,7 +429,7 @@ from typing import Optional, List, Mapping, Any
 
 
 class CustomLLM(LLM):
-    model_name = "modified/name"
+    model_name = "modified/local"
 
     # pipeline = pipeline("text-generation", model=model_name, device="cuda:0",
     #                     model_kwargs={"torch_dtype": torch.bfloat16})
@@ -498,7 +498,7 @@ def evaluate(
         pad_token_id=0,
         max_new_tokens=max_new_tokens,  # max_length=max_new_tokens+input_sequence
         min_new_tokens=min_new_tokens,  # min_length=min_new_tokens+input_sequence
-        **kwargs,
+        **kwargs
     )
 
     print('start text llama-index')
@@ -510,12 +510,14 @@ def evaluate(
     num_output = 256
     # set maximum chunk overlap
     max_chunk_overlap = 20
-    prompt_helper = PromptHelper(max_input_size, num_output, max_chunk_overlap)
+
     service_context = ServiceContext.from_defaults(llm_predictor=LLMPredictor(llm=CustomLLM()),
-                                                   prompt_helper=prompt_helper)
+                                                   prompt_helper=PromptHelper(max_input_size, num_output,
+                                                                              max_chunk_overlap))
 
     documents = SimpleDirectoryReader('./Chinese-Vicuna-master/index-docs').load_data()
     index = GPTListIndex.from_documents(documents, service_context=service_context)
+
     # Query and print response
     response = index.query('what is License of Clash?')
     print(response)

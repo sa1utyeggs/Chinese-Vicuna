@@ -7,16 +7,7 @@ bitsandbytes~=0.37.1
 git+https://github.com/huggingface/peft.git
 gradio
 appdirs
-llama-index
+llama-index==0.5.1
 
+langchain==0.0.126
 
-pip
-wheel
-cryptography
-setuptools
-future
-torch
-tenacity
-PyYAML
-numpy
-langchain

@@ -6,6 +6,8 @@ flagged
 checkpoint-5000*
 checkpoint-3800*
 
+#
+.idea
 # cpp out files
 chat
 quantize
