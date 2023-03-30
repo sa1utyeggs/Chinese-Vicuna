@@ -450,15 +450,15 @@ test_gen_config = GenerationConfig(
 class CustomLLM(LLM):
     model_name = "modified/local"
 
-    pipeline = pipeline("text-generation",
-                        model=model,
-                        tokenizer=tokenizer,
-                        device=device)
+    # pipeline = pipeline("text-generation",
+    #                     model=model,
+    #                     tokenizer=tokenizer,
+    #                     device=device)
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         prompt_length = len(prompt)
-        response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
-        print(response[prompt_length:])
+        # response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
+        # print(response[prompt_length:])
 
         # # BELlE torch 运行
         # ckpt = ''
