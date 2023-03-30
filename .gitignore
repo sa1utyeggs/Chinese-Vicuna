@@ -8,6 +8,7 @@ checkpoint-3800*
 
 #
 .idea
+modules/
 # cpp out files
 chat
 quantize

@@ -515,7 +515,7 @@ def evaluate(
                                                    prompt_helper=PromptHelper(max_input_size, num_output,
                                                                               max_chunk_overlap))
 
-    documents = SimpleDirectoryReader('./Chinese-Vicuna-master/index-docs').load_data()
+    documents = SimpleDirectoryReader('index-docs').load_data()
     index = GPTListIndex.from_documents(documents, service_context=service_context)
 
     # Query and print response
