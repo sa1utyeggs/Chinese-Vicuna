@@ -1,5 +1,6 @@
 import argparse
 import copy
+import logging
 import os
 import sys
 import warnings
@@ -17,6 +18,9 @@ from accelerate.hooks import (
 )
 from accelerate.utils import get_balanced_memory
 from huggingface_hub import hf_hub_download
+from llama_index import LLMPredictor
+from llama_index import PromptHelper, SimpleDirectoryReader, GPTListIndex
+from llama_index import ServiceContext
 from peft import PeftModelForCausalLM, LoraConfig
 from peft.utils import PeftType, set_peft_model_state_dict
 from torch import nn
@@ -27,6 +31,8 @@ from transformers.generation.utils import (
     StoppingCriteriaList,
     GenerationMixin,
 )
+
+from model import CustomLLM
 
 assert (
         "LlamaTokenizer" in transformers._import_structure["models.llama"]
@@ -323,7 +329,7 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_path", type=str, default="decapoda-research/llama-7b-hf")
-parser.add_argument("--lora_path", type=str, default="./lora-Vicuna/checkpoint-3000")
+parser.add_argument("--lora_path", type=str, default="./lora-Vicuna/checkpoint-xunlei")
 parser.add_argument("--use_local", type=int, default=1)
 args = parser.parse_args()
 
@@ -367,9 +373,13 @@ if device == "cuda":
         torch_dtype=torch.float16,
         device_map={"": 0},
     )
+    print("model: ", model.base_model_prefix, '/', BASE_MODEL, 'done')
+    # insert lora model
     model = SteamGenerationMixin.from_pretrained(
         model, LORA_WEIGHTS, torch_dtype=torch.float16, device_map={"": 0}
     )
+    # keep insert
+    # ...
 elif device == "mps":
     model = LlamaForCausalLM.from_pretrained(
         BASE_MODEL,
@@ -391,6 +401,7 @@ else:
         LORA_WEIGHTS,
         device_map={"": device},
     )
+
 
 
 def generate_prompt(instruction, input=None):
@@ -421,75 +432,8 @@ if torch.__version__ >= "2" and sys.platform != "win32":
     print('start torch.compile(model)')
     model = torch.compile(model)
 
-import torch
-from langchain.llms.base import LLM
-from llama_index import PromptHelper, SimpleDirectoryReader, GPTListIndex
-from llama_index import LLMPredictor, GPTSimpleVectorIndex
-from llama_index import ServiceContext
-from typing import Optional, List, Mapping, Any
-import logging
-import sys
-from transformers import pipeline
-
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
-
-test_gen_config = GenerationConfig(
-    temperature=0.2,
-    top_p=0.85,
-    top_k=5,
-    num_beams=4,
-    bos_token_id=1,
-    eos_token_id=2,
-    pad_token_id=0,
-    max_new_tokens=2500,  # max_length=max_new_tokens+input_sequence
-    min_new_tokens=1,  # min_length=min_new_tokens+input_sequence
-)
-
-
-class CustomLLM(LLM):
-    model_name = "modified/local"
-
-    # pipeline = pipeline("text-generation",
-    #                     model=model,
-    #                     tokenizer=tokenizer,
-    #                     device=device)
-
-    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
-        print('# start _call')
-        print('prompt: \n', prompt)
-        prompt_length = len(prompt)
-        # response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
-        # print(response[prompt_length:])
-
-        print('# break the prompt to tokens')
-        input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
-
-        # produce output tokens
-        # generate_ids = model.generate(input_ids, max_new_tokens=2500, do_sample=True, top_k=30, top_p=0.85,
-        #                               temperature=0.5, repetition_penalty=1., eos_token_id=2, bos_token_id=1,
-        #                               pad_token_id=0)
-        print('# generate')
-        generate_ids = model.generate(input_ids=input_ids,
-                                      generation_config=test_gen_config)
-
-        # decode token to string response
-        print('# decode token to string response')
-        output = tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-        print('output: \n' + output)
-        # slice the prompt
-        print('# slice the output, only newly generated token stay')
-        response = output[prompt_length:]
-
-        return response
-
-    @property
-    def _identifying_params(self) -> Mapping[str, Any]:
-        return {"name_of_model": self.model_name}
-
-    @property
-    def _llm_type(self) -> str:
-        return "custom"
 
 
 def evaluate(
@@ -498,27 +442,11 @@ def evaluate(
         top_p=0.75,
         top_k=40,
         num_beams=4,
-        max_new_tokens=128,
+        max_new_tokens=2500,
         min_new_tokens=1,
         repetition_penalty=2.0,
         **kwargs,
 ):
-    prompt = generate_prompt(input)
-    inputs = tokenizer(prompt, return_tensors="pt")
-    input_ids = inputs["input_ids"].to(device)
-    generation_config = GenerationConfig(
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
-        num_beams=num_beams,
-        bos_token_id=1,
-        eos_token_id=2,
-        pad_token_id=0,
-        max_new_tokens=max_new_tokens,  # max_length=max_new_tokens+input_sequence
-        min_new_tokens=min_new_tokens,  # min_length=min_new_tokens+input_sequence
-        **kwargs
-    )
-
     print('start text llama-index')
     # TEST
     #
@@ -529,9 +457,25 @@ def evaluate(
     # set maximum chunk overlap
     max_chunk_overlap = 20
 
-    service_context = ServiceContext.from_defaults(llm_predictor=LLMPredictor(llm=CustomLLM()),
-                                                   prompt_helper=PromptHelper(max_input_size, num_output,
-                                                                              max_chunk_overlap))
+    gen_config = GenerationConfig(
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        num_beams=num_beams,
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        max_new_tokens=max_new_tokens,
+        # max_length=max_new_tokens+input_sequence
+        min_new_tokens=min_new_tokens,
+        # min_length=min_new_tokens+input_sequence
+        repetition_penalty=repetition_penalty
+
+    )
+
+    service_context = ServiceContext.from_defaults(
+        llm_predictor=LLMPredictor(llm=CustomLLM(mod=model, token=tokenizer, gen_config=gen_config, device=device)),
+        prompt_helper=PromptHelper(max_input_size, num_output, max_chunk_overlap))
 
     documents = SimpleDirectoryReader('Chinese-Vicuna/index-docs').load_data()
     print(documents)
@@ -544,11 +488,11 @@ def evaluate(
     print('end save to disk')
     # Query and print response
     print('start query')
-    response = index.query('what is License of Clash?')
+    response = index.query(input, mode="embedding")
     print('end query')
     # print(response)
 
-    output = response
+    return response
 
     # with torch.no_grad():
     #     # immOutPut = model.generate(input_ids=input_ids, generation_config=generation_config,
