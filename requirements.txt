@@ -12,7 +12,7 @@ llama-index==0.5.1
 langchain==0.0.126
 
 
-torch==2.0.0
-tenacity==8.2.2
-PyYAML==6.0
-numpy==1.21.3
+torch
+tenacity
+PyYAML
+numpy
