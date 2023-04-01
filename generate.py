@@ -5,7 +5,8 @@ import os
 import sys
 import warnings
 from typing import Optional, List, Callable
-
+from langchain.llms import OpenAI
+import faiss
 import gradio as gr
 import torch
 import torch.distributed as dist
@@ -19,8 +20,9 @@ from accelerate.hooks import (
 from accelerate.utils import get_balanced_memory
 from huggingface_hub import hf_hub_download
 from llama_index import LLMPredictor
-from llama_index import PromptHelper, SimpleDirectoryReader, GPTListIndex
+from llama_index import PromptHelper, SimpleDirectoryReader
 from llama_index import ServiceContext
+from llama_index import GPTKeywordTableIndex, GPTSimpleVectorIndex, GPTListIndex, GPTTreeIndex, GPTFaissIndex
 from peft import PeftModelForCausalLM, LoraConfig
 from peft.utils import PeftType, set_peft_model_state_dict
 from torch import nn
@@ -32,7 +34,7 @@ from transformers.generation.utils import (
     GenerationMixin,
 )
 
-from model import CustomLLM
+from model import CustomLLM, Llama7bHFLLM
 
 assert (
         "LlamaTokenizer" in transformers._import_structure["models.llama"]
@@ -44,15 +46,15 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
     # support for streamly beam search
     @torch.no_grad()
     def stream_generate(
-            self,
-            input_ids: Optional[torch.Tensor] = None,
-            generation_config: Optional[GenerationConfig] = None,
-            logits_processor: Optional[LogitsProcessorList] = None,
-            stopping_criteria: Optional[StoppingCriteriaList] = None,
-            prefix_allowed_tokens_fn: Optional[
-                Callable[[int, torch.Tensor], List[int]]
-            ] = None,
-            **kwargs,
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        generation_config: Optional[GenerationConfig] = None,
+        logits_processor: Optional[LogitsProcessorList] = None,
+        stopping_criteria: Optional[StoppingCriteriaList] = None,
+        prefix_allowed_tokens_fn: Optional[
+            Callable[[int, torch.Tensor], List[int]]
+        ] = None,
+        **kwargs,
     ):
         self._reorder_cache = self.base_model._reorder_cache
         if is_deepspeed_zero3_enabled() and dist.world_size() > 1:
@@ -96,8 +98,8 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
             eos_token_id = [eos_token_id]
 
         has_default_max_length = (
-                kwargs.get("max_length") is None
-                and generation_config.max_length is not None
+            kwargs.get("max_length") is None
+            and generation_config.max_length is not None
         )
         if has_default_max_length and generation_config.max_new_tokens is None:
             warnings.warn(
@@ -108,11 +110,11 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
             )
         elif generation_config.max_new_tokens is not None:
             generation_config.max_length = (
-                    generation_config.max_new_tokens + input_ids_seq_length
+                generation_config.max_new_tokens + input_ids_seq_length
             )
         if generation_config.min_new_tokens is not None:
             generation_config.min_length = (
-                    generation_config.min_new_tokens + input_ids_seq_length
+                generation_config.min_new_tokens + input_ids_seq_length
             )
 
         if input_ids_seq_length >= generation_config.max_length:
@@ -207,8 +209,8 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
             )  # (batch_size * num_beams, vocab_size)
             next_token_scores_processed = logits_processor(input_ids, next_token_scores)
             next_token_scores = next_token_scores_processed + beam_scores[
-                                                              :, None
-                                                              ].expand_as(next_token_scores)
+                :, None
+            ].expand_as(next_token_scores)
 
             # reshape for beam search
             vocab_size = next_token_scores.shape[-1]
@@ -329,17 +331,17 @@ class SteamGenerationMixin(PeftModelForCausalLM, GenerationMixin):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model_path", type=str, default="decapoda-research/llama-7b-hf")
-parser.add_argument("--lora_path", type=str, default="./lora-Vicuna/checkpoint-xunlei")
+parser.add_argument("--lora_path", type=str, default="./lora-Vicuna/checkpoint-3000")
 parser.add_argument("--use_local", type=int, default=1)
 args = parser.parse_args()
 
-# max token
-MAX_TOKENS = 10000
-tokenizer = LlamaTokenizer.from_pretrained(args.model_path, max_length=MAX_TOKENS, truncation=True)
+tokenizer = LlamaTokenizer.from_pretrained(args.model_path)
 
 LOAD_8BIT = True
 BASE_MODEL = args.model_path
 LORA_WEIGHTS = args.lora_path
+
+
 
 # fix the path for local checkpoint
 lora_bin_path = os.path.join(args.lora_path, "adapter_model.bin")
@@ -373,13 +375,9 @@ if device == "cuda":
         torch_dtype=torch.float16,
         device_map={"": 0},
     )
-    print("model: ", model.base_model_prefix, '/', BASE_MODEL, 'done')
-    # insert lora model
     model = SteamGenerationMixin.from_pretrained(
         model, LORA_WEIGHTS, torch_dtype=torch.float16, device_map={"": 0}
     )
-    # keep insert
-    # ...
 elif device == "mps":
     model = LlamaForCausalLM.from_pretrained(
         BASE_MODEL,
@@ -401,7 +399,6 @@ else:
         LORA_WEIGHTS,
         device_map={"": device},
     )
-
 
 
 def generate_prompt(instruction, input=None):
@@ -429,11 +426,18 @@ if not LOAD_8BIT:
 
 model.eval()
 if torch.__version__ >= "2" and sys.platform != "win32":
-    print('start torch.compile(model)')
     model = torch.compile(model)
+
+
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
+
+import openai
+
+openai.api_key = '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'
+os.environ["OPENAI_API_KEY"] = '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'
+
 
 
 def evaluate(
@@ -473,24 +477,41 @@ def evaluate(
 
     )
 
+    # service_context = ServiceContext.from_defaults(
+    #     llm_predictor=LLMPredictor(llm=CustomLLM(mod=model, token=tokenizer, gen_config=gen_config, device=device)),
+    #     prompt_helper=PromptHelper(max_input_size, num_output, max_chunk_overlap))
+
     service_context = ServiceContext.from_defaults(
-        llm_predictor=LLMPredictor(llm=CustomLLM(mod=model, token=tokenizer, gen_config=gen_config, device=device)),
+        llm_predictor=LLMPredictor(llm=model),
         prompt_helper=PromptHelper(max_input_size, num_output, max_chunk_overlap))
 
     documents = SimpleDirectoryReader('Chinese-Vicuna/index-docs').load_data()
     print(documents)
 
     print('start init index')
-    index = GPTListIndex.from_documents(documents, service_context=service_context)
+    # llm_predictor = LLMPredictor(llm=OpenAI(temperature=0, model_name="text-davinci-003"))
+    # default_service_context = ServiceContext.from_defaults(llm_predictor=llm_predictor)
+    # index = GPTFaissIndex.from_documents(documents, service_context=service_context)
+    # index = GPTFaissIndex.from_documents(documents, faiss_index=faiss.IndexFlatL2(1536), service_context=default_service_context)
     print('end init index done')
     print('start save to disk')
-    index.save_to_disk("clash-index.json")
+    # index.save_to_disk("clash-index.json")
+
+    # suffix do not matter
+    faiss_index_save_path = 'faiss_index.faiss'
+    faiss_index = faiss.IndexFlatL2(1536)
+
+    faiss.write_index(faiss_index, faiss_index_save_path)
+
+    index = GPTFaissIndex.load_from_disk(save_path='clash-index.json',
+                                         faiss_index=faiss_index_save_path,
+                                         service_context=service_context)
     print('end save to disk')
     # Query and print response
     print('start query')
-    response = index.query(input, mode="embedding")
+    response = index.query(input)
     print('end query')
-    # print(response)
+    print(response)
 
     return response
 

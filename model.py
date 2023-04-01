@@ -23,9 +23,10 @@ class CustomLLM(LLM):
         max_new_tokens=2500,  # max_length=max_new_tokens+input_sequence
         min_new_tokens=1,  # min_length=min_new_tokens+input_sequence
     )
-    model : Optional[LlamaTokenizer]
-    tokenizer : Optional[LlamaTokenizer]
+    model: Optional[LlamaTokenizer]
+    tokenizer: Optional[LlamaTokenizer]
     device = 'cuda'
+
     # pipeline = pipeline("text-generation",
     #                     model=model,
     #                     tokenizer=tokenizer,
@@ -39,12 +40,11 @@ class CustomLLM(LLM):
         self.device = device
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
-        return self.doCall(self, prompt, stop)
+        return self.doCall(prompt=prompt, stop=stop)
 
     def doCall(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         print('# start _call')
         print('prompt: \n', prompt)
-        prompt_length = len(prompt)
         # response = self.pipeline(prompt, max_new_tokens=2500)[0]["generated_text"]
         # print(response[prompt_length:])
 
@@ -55,23 +55,48 @@ class CustomLLM(LLM):
         # generate_ids = model.generate(input_ids, max_new_tokens=2500, do_sample=True, top_k=30, top_p=0.85,
         #                               temperature=0.5, repetition_penalty=1., eos_token_id=2, bos_token_id=1,
         #                               pad_token_id=0)
-        print('# generate')
+        print('# generate...')
         generate_ids = self.model.generate(input_ids=input_ids,
                                            generation_config=self.generation_config)
 
         # decode token to string response
         print('# decode token to string response')
         output = \
-            self.tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+        self.tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         print('output: \n' + output)
         # slice the prompt
         print('# slice the output, only newly generated token stay')
-        response = output[prompt_length:]
+        response = output[len(prompt):]
 
         return response
 
     def doPipelineCall(self, prompt: str, stop: Optional[List[str]] = None) -> str:
         pass
+
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        return {"name_of_model": self.model_name}
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom"
+
+
+
+
+
+class Llama7bHFLLM(LLM):
+    model_name = "decapoda-research/llama-7b-hf"
+    num_output = 256
+    pipeline = pipeline("text-generation", model=model_name, device="cuda:0",
+                        model_kwargs={"torch_dtype": torch.bfloat16})
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+        prompt_length = len(prompt)
+        response = self.pipeline(prompt, max_new_tokens=self.num_output)[0]["generated_text"]
+
+        # only return newly generated tokens
+        return response[prompt_length:]
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:

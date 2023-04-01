@@ -7,11 +7,11 @@ bitsandbytes~=0.37.1
 git+https://github.com/huggingface/peft.git
 gradio==3.22.1
 appdirs
-llama-index==0.5.1
+llama-index~=0.5.2
 
 langchain==0.0.126
 
-
+faiss-gpu
 torch
 tenacity
 PyYAML
